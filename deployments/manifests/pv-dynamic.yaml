@@ -1,8 +1,8 @@
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
-  name: onlineconf
-provisioner: csi.onlineconf.mail.ru
+  name: universal-csi-driver
+provisioner: csi.universal-csi-driver
 mountOptions:
   - mode=755
 parameters:
@@ -14,7 +14,7 @@ parameters:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: example-onlineconf-volume-claim
+  name: example-universal-volume-claim
 data:
   "username": ...
   "password": ...
@@ -22,9 +22,9 @@ data:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: example-onlineconf-volume-claim
+  name: example-universal-volume-claim
 spec:
-  storageClassName: onlineconf
+  storageClassName: universal
   accessModes:
     - ReadOnlyMany
   volumeMode: Filesystem
@@ -45,10 +45,10 @@ spec:
       - name: ...
         ...
         volumeMounts:
-        - name: onlineconf-volume
-          mountPath: /usr/local/etc/onlineconf
+        - name: universal-volume
+          mountPath: /usr/local/etc/universal
           readOnly: true
       volumes:
-      - name: onlineconf-volume
+      - name: universal-volume
         persistentVolumeClaim:
-          claimName: example-onlineconf-volume-claim
+          claimName: example-universal-volume-claim

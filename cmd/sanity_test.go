@@ -15,7 +15,7 @@ func TestSanity(t *testing.T) {
 
 	d := newDriver()
 	d.initControllerServer()
-	d.initNodeServer("1234567890", os.TempDir()+"/onlineconf-csi-state.json")
+	d.initNodeServer("1234567890", os.TempDir()+"/onlineconf-csi-state.json", "/data")
 	go d.run(endpoint)
 	defer d.stop()
 

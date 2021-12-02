@@ -14,6 +14,10 @@ metadata:
   labels:
     app: universal-csi-driver
 spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 10%
   selector:
     matchLabels:
       app: universal-csi-driver
@@ -22,7 +26,6 @@ spec:
       labels:
         app: universal-csi-driver
     spec:
-      priorityClassName: system-node-critical
       containers:
       - name: node-driver-registrar
         image: quay.io/k8scsi/csi-node-driver-registrar:v1.2.0
@@ -60,6 +63,8 @@ spec:
         - name: pods-dir
           mountPath: /var/lib/kubelet/pods
           mountPropagation: "Bidirectional"
+        - name: universal-csi-driver-data
+          mountPath: /data
       volumes:
       - name: socket-dir
         hostPath:
@@ -77,3 +82,5 @@ spec:
         hostPath:
           path: /var/lib/kubelet/plugins_registry
           type: Directory
+      - name: universal-csi-driver-data
+        emptyDir: {}

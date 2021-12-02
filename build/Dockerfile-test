@@ -5,5 +5,5 @@ WORKDIR /go/src
 COPY go.* ./
 RUN go mod download
 
-COPY *.go ./
+COPY cmd/*.go ./
 ENTRYPOINT ["go", "test"]

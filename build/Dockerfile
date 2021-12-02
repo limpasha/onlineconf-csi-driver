@@ -5,7 +5,7 @@ WORKDIR /go/src
 COPY go.* ./
 RUN go mod download
 
-COPY *.go ./
+COPY cmd/*.go ./
 RUN go build -o universal-csi-driver
 
 FROM gcr.io/distroless/base
