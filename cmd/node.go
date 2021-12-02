@@ -4,29 +4,28 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"syscall"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/onlineconf/onlineconf/updater/v3/updater"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type updaterInfo struct {
-	updater *updater.Updater
-	wg      sync.WaitGroup
+type volumeInfo struct {
+	StageHookURL   *url.URL
+	UnstageHookURL *url.URL
 }
-
 type nodeServer struct {
 	csi.UnimplementedNodeServer
 	id        string
 	m         sync.Mutex
 	state     *state
-	updaters  map[string]*updaterInfo
+	volumes   map[string]*volumeInfo
 	mountPath string
 }
 
@@ -41,7 +40,7 @@ func newNodeServer(id string, stateFile, mountPath string) (*nodeServer, error) 
 	return &nodeServer{
 		id:        id,
 		state:     state,
-		updaters:  make(map[string]*updaterInfo),
+		volumes:   make(map[string]*volumeInfo),
 		mountPath: mountPath,
 	}, nil
 }
@@ -87,7 +86,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	if us, ok := ns.state.Updaters[volumeId]; ok {
+	if us, ok := ns.state.Volumes[volumeId]; ok {
 		if us.DataDir == stage {
 			return &csi.NodeStageVolumeResponse{}, nil
 		} else {
@@ -95,7 +94,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		}
 	}
 
-	if _, ok := ns.updaters[stage]; ok {
+	if _, ok := ns.volumes[stage]; ok {
 		return nil, status.Error(codes.InvalidArgument, "another volume is already staged to requested StagingTargetPath")
 	}
 
@@ -111,19 +110,21 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		}
 	}
 
-	state := updaterState{
-		DataDir:        stage,
-		URI:            volCtx.uri,
-		Username:       req.GetSecrets()["username"],
-		Password:       req.GetSecrets()["password"],
-		UpdateInterval: volCtx.updateInterval,
-		Variables:      volCtx.vars,
+	state := volumeState{
+		DataDir: stage,
+
+		StageHookURL:   volCtx.stageHookURL,
+		UnstageHookURL: volCtx.unstageHookURL,
+
+		Variables: volCtx.vars,
 	}
-	// if err := ns.runUpdater(volumeId, state, false); err != nil {
-	// 	log.Error().Err(err).Msg("failed to run updater")
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
-	ns.state.Updaters[volumeId] = state
+
+	if err := ns.runVolume(volumeId, state, false); err != nil {
+		log.Error().Err(err).Msg("failed to run Volume")
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	ns.state.Volumes[volumeId] = state
 	ns.state.save()
 
 	return &csi.NodeStageVolumeResponse{}, nil
@@ -143,21 +144,27 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	if us, ok := ns.state.Updaters[volumeId]; !(ok && us.DataDir == stage) {
+	if vs, ok := ns.state.Volumes[volumeId]; !(ok && vs.DataDir == stage) {
 		return &csi.NodeUnstageVolumeResponse{}, nil
 	}
 
-	if ui := ns.updaters[stage]; ui != nil {
-		log.Info().Str("volume_id", volumeId).Msg("stopping updater")
-		// ui.updater.Stop()
-		// ui.wg.Wait()
+	if vi := ns.volumes[stage]; vi != nil {
+		if addr := vi.UnstageHookURL.String(); addr != "" {
+			resp, err := callHookURL(addr)
+			if err != nil {
+				log.Error().Err(err).Str("unstageHookURL", addr).Msg("failed to call hook")
+				return nil, status.Error(codes.Internal, err.Error())
+			}
+
+			log.Info().Str("response", resp).Str("unstageHookURL", addr).Msg("sucessfully called hook")
+		}
 	}
 
 	if err := os.RemoveAll(stage); err != nil {
 		log.Error().Err(err).Msg("failed to remove StagingTargetDir")
 		return nil, status.Error(codes.Internal, "failed to remove StagingTargetPath")
 	}
-	delete(ns.state.Updaters, volumeId)
+	delete(ns.state.Volumes, volumeId)
 	ns.state.save()
 
 	return &csi.NodeUnstageVolumeResponse{}, nil
@@ -184,9 +191,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	if us, ok := ns.state.Updaters[volumeId]; !ok {
+	if vs, ok := ns.state.Volumes[volumeId]; !ok {
 		return nil, status.Error(codes.NotFound, "unknown VolumeId")
-	} else if us.DataDir != stage {
+	} else if vs.DataDir != stage {
 		return nil, status.Error(codes.InvalidArgument, "incompatible VolumeId and StagingTargetPath")
 	}
 
@@ -249,36 +256,22 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-func (ns *nodeServer) runUpdater(volumeId string, state updaterState, restore bool) error {
-	log.Info().Str("volume_id", volumeId).Dur("updateInterval", state.UpdateInterval).Msg("starting updater")
-
-	u := updater.NewUpdater(updater.UpdaterConfig{
-		Admin: updater.AdminConfig{
-			URI:      state.URI,
-			Username: state.Username,
-			Password: state.Password,
-		},
-		UpdateInterval: state.UpdateInterval,
-		DataDir:        state.DataDir,
-		Variables:      state.Variables,
-	})
-	if err := u.Update(); err != nil {
-		if !restore {
+func (ns *nodeServer) runVolume(volumeId string, state volumeState, restore bool) error {
+	if addr := state.StageHookURL.String(); addr != "" {
+		resp, err := callHookURL(addr)
+		if err != nil {
+			log.Error().Err(err).Str("stageHookURL", addr).Msg("failed to call hook")
 			return err
 		}
-		log.Error().Err(err).Str("volume_id", volumeId).Msg("update failed")
+
+		log.Info().Str("response", resp).Str("stageHookURL", addr).Msg("successfully called hook")
 	}
 
-	ui := &updaterInfo{updater: u}
-	ui.wg.Add(1)
-	ns.updaters[state.DataDir] = ui
-	log.Info().Str("volume_id", volumeId).Msg("updater started")
-	go func() {
-		u.Run()
-		log.Info().Str("volume_id", volumeId).Msg("updater stopped")
-		delete(ns.updaters, state.DataDir)
-		ui.wg.Done()
-	}()
+	vi := &volumeInfo{
+		StageHookURL:   state.StageHookURL,
+		UnstageHookURL: state.UnstageHookURL,
+	}
+	ns.volumes[state.DataDir] = vi
 
 	return nil
 }
@@ -287,13 +280,13 @@ func (ns *nodeServer) start() {
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	for volumeId, state := range ns.state.Updaters {
+	for volumeId, state := range ns.state.Volumes {
 		_, err := os.Stat(state.DataDir)
 		if err != nil {
 			continue
 		}
 
-		ns.runUpdater(volumeId, state, true)
+		ns.runVolume(volumeId, state, true)
 	}
 }
 
@@ -301,11 +294,14 @@ func (ns *nodeServer) stop() {
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	for _, ui := range ns.updaters {
-		ui.updater.Stop()
-	}
-	for _, ui := range ns.updaters {
-		ui.wg.Wait()
+	for _, vi := range ns.volumes {
+		if addr := vi.UnstageHookURL.String(); addr != "" {
+			resp, err := callHookURL(addr)
+			if err != nil {
+				log.Error().Err(err).Str("unstageHookURL", addr).Msg("failed to call hook")
+			}
+			log.Info().Str("response", resp).Str("unstageHookURL", addr).Msg("successfully called hook")
+		}
 	}
 }
 

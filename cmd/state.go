@@ -2,28 +2,28 @@ package main
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
-	"time"
 )
 
 type state struct {
-	path     string
-	Updaters map[string]updaterState
+	path    string
+	Volumes map[string]volumeState
 }
 
-type updaterState struct {
-	DataDir        string
-	URI            string
-	Username       string
-	Password       string
-	UpdateInterval time.Duration
-	Variables      map[string]string
+type volumeState struct {
+	DataDir string
+
+	StageHookURL   *url.URL
+	UnstageHookURL *url.URL
+
+	Variables map[string]string
 }
 
 func readState(path string) (*state, error) {
 	s := &state{
-		path:     path,
-		Updaters: make(map[string]updaterState),
+		path:    path,
+		Volumes: make(map[string]volumeState),
 	}
 	f, err := os.Open(path)
 	if err != nil {

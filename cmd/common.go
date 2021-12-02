@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/rs/zerolog/log"
@@ -55,30 +55,25 @@ func readVolumeCapability(capability *csi.VolumeCapability) (*volumeCapability, 
 }
 
 type volumeContext struct {
-	uri            string
-	updateInterval time.Duration
-	vars           map[string]string
+	vars map[string]string
+
+	stageHookURL   *url.URL
+	unstageHookURL *url.URL
 }
 
-func readVolumeContext(parameters map[string]string) (*volumeContext, error) {
-	ctx := &volumeContext{
-		uri:  parameters["uri"],
-		vars: make(map[string]string, len(parameters)),
+func readVolumeContext(raw map[string]string) (*volumeContext, error) {
+	ctx := &volumeContext{}
+
+	var err error
+
+	if ctx.stageHookURL, err = url.Parse(raw["stageHookURL"]); err != nil || !ctx.stageHookURL.IsAbs() {
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("stageHookURL invalid value: %v", err))
+	}
+	if ctx.unstageHookURL, err = url.Parse(raw["unstageHookURL"]); err != nil || !ctx.unstageHookURL.IsAbs() {
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("unstageHookURL invalid value: %v", err))
 	}
 
-	if ctx.uri == "" {
-		return nil, status.Error(codes.InvalidArgument, "uri is required")
-	}
-
-	if intervalStr := parameters["updateInterval"]; intervalStr != "" {
-		interval, err := time.ParseDuration(intervalStr)
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("updateInterval invalid value: %v", err))
-		}
-		ctx.updateInterval = interval
-	}
-
-	for k, v := range parameters {
+	for k, v := range raw {
 		if strings.HasPrefix(k, "${") && strings.HasSuffix(k, "}") {
 			ctx.vars[k[2:len(k)-1]] = v
 		}
@@ -87,7 +82,7 @@ func readVolumeContext(parameters map[string]string) (*volumeContext, error) {
 }
 
 func (volCtx *volumeContext) volumeContext() map[string]string {
-	volumeContext := map[string]string{"uri": volCtx.uri}
+	volumeContext := map[string]string{}
 	for k, v := range volCtx.vars {
 		volumeContext["${"+k+"}"] = v
 	}

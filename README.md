@@ -181,3 +181,44 @@ First of all, [long story](https://github.com/container-storage-interface/spec/b
         - volume_context (the same as above)
 7. After all, the deployment is deployed and data from `target_path` inside driver's container is available via attached PV in deployment's containers.
 
+# Where is onlineconf
+
+This universal CSI driver has the onlineconf-updater as special case served by corresponding sidecar container. **TODO**
+
+# PV deployment params
+### Static volume provisioning
+
+See [example manifest (static)](deployments/manifests/pv-static.yaml) for more details.
+
+#### Persistent Volume configuration
+
+* `accessModes` - must be `ReadOnlyMany`
+* `capacity` - not used by *universal-csi-driver* right now. This field is required by Kubernetes, should be set to something reasonable.
+* `csi`:
+  * `driver`: `csi.universal-csi-driver`
+  * `nodeStageSecretRef` - a reference to a secret containing `username` and `password` used to authenticate in *onlineconf-admin*
+  * `readOnly`: `true` (this volumes are always read only)
+  * `volumeAttributes`:
+    * `uri` - URI of *onlineconf-admin* instance
+    * `updateInterval` - polling interval for requests to *onlineconf-admin* instance (default: "10s")
+    * `${any_variable_name}` - any variables you want to interpolate into OnlineConf template values
+  * `volumeHandle` - required by Kubernetes
+* `mountOptions` - optional, supported options:
+  * `mode=` - file mode bits of the volume root directory (default: `750`)
+* `volumeMode` - optional, must be `Filesystem` (default)
+
+### Dynamic volume provisioning
+
+See [example manifest (dynamic)](deployments/manifests/pv-dynamic.yaml) for more details.
+
+#### Storage Class configuration
+
+* `provisioner` - must be `csi.universal-csi-driver`
+* `mountOptions` - optional, supported options:
+  * `mode=` - file mode bits of the volume root directory (default: `750`)
+* `parameters`:
+  * `csi.storage.k8s.io/node-stage-secret-name` - a name of a secret containing `username` and `password` used to authenticate in *onlineconf-admin*. Can contain template variables `${pvc.name}`, `${pvc.namespace}`, `${pv.name}` and `${pvc.annotations['<ANNOTATION_KEY>']}`, see [Kubernetes CSI docs](https://kubernetes-csi.github.io/docs/secrets-and-credentials-storage-class.html#node-stage-secret) for more information. Recommended value is `${pvc.name}`.
+  * `csi.storage.k8s.io/node-stage-secret-namespace` - a namespace of this secret. Can contain template variables `${pvc.namespace}` and `${pv.name}`. Recommended value is `${pvc.namespace}`.
+  * `uri` - URI of *onlineconf-admin* instance
+  * `updateInterval` - polling interval for requests to *onlineconf-admin* instance (default: "10s")
+  * `${any_variable_name}` - any variables you want to interpolate into OnlineConf template values. Can contain template variables `${pvc.name}`, `${pvc.namespace}` and `${pv.name}` (see docs on `csi.storage.k8s.io/node-stage-secret-name` for more details).
