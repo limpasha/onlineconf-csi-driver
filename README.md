@@ -161,7 +161,7 @@ So, the scheme of pods and volumes within a node is:
 
 Full example deploy can be found [here](deploy.yaml).
 
-# How it works internally
+## How it works internally
 
 First of all, [long story](https://github.com/container-storage-interface/spec/blob/master/spec.md) short about CSI drivers for kubernetes.
 
@@ -181,11 +181,11 @@ First of all, [long story](https://github.com/container-storage-interface/spec/b
         - volume_context (the same as above)
 7. After all, the deployment is deployed and data from `target_path` inside driver's container is available via attached PV in deployment's containers.
 
-# Where is onlineconf
+## Where is onlineconf
 
 This universal CSI driver has the onlineconf-updater as special case served by corresponding sidecar container. **TODO**
 
-# PV deployment params
+## PV deployment params
 ### Static volume provisioning
 
 See [example manifest (static)](deployments/manifests/pv-static.yaml) for more details.
