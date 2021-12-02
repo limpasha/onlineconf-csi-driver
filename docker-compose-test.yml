@@ -1,10 +1,10 @@
 version: '3'
 services:
-  onlineconf-csi-driver-test:
+  universal-csi-driver-test:
     build:
       context: .
       dockerfile: Dockerfile-test
-    image: onlineconf-csi-driver-test
+    image: universal-csi-driver-test
     environment:
       ONLINECONF_URI: http://onlineconf-admin
       ONLINECONF_USERNAME: gopher

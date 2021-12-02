@@ -1,15 +1,15 @@
 FROM golang
 
-WORKDIR /go/src/github.com/onlineconf/onlineconf-csi-driver
+WORKDIR /go/src
 
 COPY go.* ./
 RUN go mod download
 
 COPY *.go ./
-RUN go build -o onlineconf-csi-driver
+RUN go build -o universal-csi-driver
 
 FROM gcr.io/distroless/base
 
-COPY --from=0 /go/src/github.com/onlineconf/onlineconf-csi-driver/onlineconf-csi-driver /usr/local/bin/onlineconf-csi-driver
+COPY --from=0 /go/src/universal-csi-driver /usr/local/bin/universal-csi-driver
 
-ENTRYPOINT ["onlineconf-csi-driver"]
+ENTRYPOINT ["universal-csi-driver"]

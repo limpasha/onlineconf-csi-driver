@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -21,21 +23,26 @@ type updaterInfo struct {
 
 type nodeServer struct {
 	csi.UnimplementedNodeServer
-	id       string
-	m        sync.Mutex
-	state    *state
-	updaters map[string]*updaterInfo
+	id        string
+	m         sync.Mutex
+	state     *state
+	updaters  map[string]*updaterInfo
+	mountPath string
 }
 
-func newNodeServer(id string, stateFile string) (*nodeServer, error) {
+func newNodeServer(id string, stateFile, mountPath string) (*nodeServer, error) {
 	state, err := readState(stateFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open state file: %w", err)
 	}
+
+	// TODO check if mountPath reachable, mkdir if not
+
 	return &nodeServer{
-		id:       id,
-		state:    state,
-		updaters: make(map[string]*updaterInfo),
+		id:        id,
+		state:     state,
+		updaters:  make(map[string]*updaterInfo),
+		mountPath: mountPath,
 	}, nil
 }
 
@@ -112,10 +119,10 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		UpdateInterval: volCtx.updateInterval,
 		Variables:      volCtx.vars,
 	}
-	if err := ns.runUpdater(volumeId, state, false); err != nil {
-		log.Error().Err(err).Msg("failed to run updater")
-		return nil, status.Error(codes.Internal, err.Error())
-	}
+	// if err := ns.runUpdater(volumeId, state, false); err != nil {
+	// 	log.Error().Err(err).Msg("failed to run updater")
+	// 	return nil, status.Error(codes.Internal, err.Error())
+	// }
 	ns.state.Updaters[volumeId] = state
 	ns.state.save()
 
@@ -142,8 +149,8 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 
 	if ui := ns.updaters[stage]; ui != nil {
 		log.Info().Str("volume_id", volumeId).Msg("stopping updater")
-		ui.updater.Stop()
-		ui.wg.Wait()
+		// ui.updater.Stop()
+		// ui.wg.Wait()
 	}
 
 	if err := os.RemoveAll(stage); err != nil {
@@ -183,11 +190,14 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.InvalidArgument, "incompatible VolumeId and StagingTargetPath")
 	}
 
-	if mounts, err := readMountInfo(); err != nil {
+	// always use the same configured
+	stage = ns.mountPath
+
+	if source, err := getMountSource(target); err != nil {
 		log.Error().Err(err).Msg("failed to read mountinfo")
 		return nil, status.Error(codes.Internal, "failed to read mountinfo")
-	} else if mount := mounts.getByMountPoint(target); mount != nil {
-		if mounts.verifyMountSource(mount, stage) {
+	} else if source != "" {
+		if source == stage {
 			return &csi.NodePublishVolumeResponse{}, nil
 		} else {
 			return nil, status.Error(codes.InvalidArgument, "incompatible StagingTargetPath")
@@ -297,4 +307,24 @@ func (ns *nodeServer) stop() {
 	for _, ui := range ns.updaters {
 		ui.wg.Wait()
 	}
+}
+
+func getMountSource(target string) (string, error) {
+	f, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		fields := strings.Split(s.Text(), " ")
+		if len(fields) < 5 {
+			continue
+		}
+		if fields[4] == target {
+			return fields[3], nil
+		}
+	}
+	return "", s.Err()
 }

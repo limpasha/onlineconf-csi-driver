@@ -13,7 +13,8 @@ var (
 	endpoint   = flag.String("endpoint", "unix:///csi/csi.sock", "CSI endpoint")
 	controller = flag.Bool("controller", false, "serve Controller Service RPC")
 	nodeId     = flag.String("node", "", "node id (serve Node Service RPC)")
-	stateFile  = flag.String("state", "/var/lib/onlineconf-csi-driver/state.json", "state file (used by Node Service only)")
+	stateFile  = flag.String("state", "/var/lib/universal-csi-driver/state.json", "state file (used by Node Service only)")
+	mountPath  = flag.String("mount_path", "/data", "path for data inside driver's container to publish")
 )
 
 func main() {
@@ -24,13 +25,13 @@ func main() {
 		driver.initControllerServer()
 	}
 	if *nodeId != "" {
-		err := driver.initNodeServer(*nodeId, *stateFile)
+		err := driver.initNodeServer(*nodeId, *stateFile, *mountPath)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to init node server")
 		}
 	}
 
-	log.Info().Msg("onlineconf-csi-driver started")
+	log.Info().Msg("universal-csi-driver started")
 	sigC := make(chan os.Signal, 1)
 	signal.Notify(sigC, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigC)
@@ -42,5 +43,5 @@ func main() {
 	}()
 
 	driver.run(*endpoint)
-	log.Info().Msg("onlineconf-csi-driver stopped")
+	log.Info().Msg("universal-csi-driver stopped")
 }

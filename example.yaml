@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: example-onlineconf-secret
+  name: example-universal-secret
 data:
   "username": ...
   "password": ...
@@ -9,7 +9,7 @@ data:
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: example-onlineconf-volume
+  name: example-universal-volume
 spec:
   volumeMode: Filesystem
   mountOptions:
@@ -19,24 +19,23 @@ spec:
   capacity:
     storage: 1Gi
   csi:
-    driver: csi.onlineconf.mail.ru
-    volumeHandle: example-onlineconf-volume
+    driver: csi.universal-csi-driver
+    volumeHandle: example-universal-volume
     readOnly: true
     volumeAttributes:
-      uri: http://onlineconf.example.com
-      updateInterval: 60s
+      data: {}
     nodeStageSecretRef:
-      name: example-onlineconf-secret
+      name: example-universal-secret
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: example-onlineconf-volume-claim
+  name: example-universal-volume-claim
 spec:
   accessModes:
     - ReadOnlyMany
   volumeMode: Filesystem
-  volumeName: example-onlineconf-volume
+  volumeName: example-universal-volume
   resources:
     requests:
       storage: 1Gi
@@ -54,10 +53,10 @@ spec:
       - name: ...
         ...
         volumeMounts:
-        - name: onlineconf-volume
-          mountPath: /usr/local/etc/onlineconf
+        - name: universal-volume
+          mountPath: /usr/local/etc/universal
           readOnly: true
       volumes:
-      - name: onlineconf-volume
+      - name: universal-volume
         persistentVolumeClaim:
-          claimName: example-onlineconf-volume-claim
+          claimName: example-universal-volume-claim

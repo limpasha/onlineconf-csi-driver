@@ -1,4 +1,4 @@
-module github.com/onlineconf/onlineconf-csi-driver
+module github.com/limpasha/onlineconf-csi-driver
 
 go 1.13
 

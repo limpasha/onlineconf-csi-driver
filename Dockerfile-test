@@ -1,6 +1,6 @@
 FROM golang
 
-WORKDIR /go/src/github.com/onlineconf/onlineconf-csi-driver
+WORKDIR /go/src
 
 COPY go.* ./
 RUN go mod download

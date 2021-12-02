@@ -14,7 +14,7 @@ func newIdentityServer() *identityServer {
 
 func (ids *identityServer) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
 	return &csi.GetPluginInfoResponse{
-		Name:          "csi.onlineconf.mail.ru",
+		Name:          "csi.universal-csi-driver",
 		VendorVersion: version,
 	}, nil
 }
