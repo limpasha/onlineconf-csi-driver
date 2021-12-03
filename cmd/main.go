@@ -10,11 +10,11 @@ import (
 )
 
 var (
-	endpoint   = flag.String("endpoint", "unix:///csi/csi.sock", "CSI endpoint")
-	controller = flag.Bool("controller", false, "serve Controller Service RPC")
-	nodeId     = flag.String("node", "", "node id (serve Node Service RPC)")
-	stateFile  = flag.String("state", "/var/lib/universal-csi-driver/state.json", "state file (used by Node Service only)")
-	mountPath  = flag.String("mount_path", "/data", "path for data inside driver's container to publish")
+	endpoint      = flag.String("endpoint", "unix:///csi/csi.sock", "CSI endpoint")
+	controller    = flag.Bool("controller", false, "serve Controller Service RPC")
+	nodeId        = flag.String("node", "", "node id (serve Node Service RPC)")
+	stateFile     = flag.String("state", "/var/lib/universal-csi-driver/state.json", "state file (used by Node Service only)")
+	mountRootPath = flag.String("mount_root_path", "/data", "root path for data inside driver's container to publish")
 )
 
 func main() {
@@ -25,7 +25,7 @@ func main() {
 		driver.initControllerServer()
 	}
 	if *nodeId != "" {
-		err := driver.initNodeServer(*nodeId, *stateFile, *mountPath)
+		err := driver.initNodeServer(*nodeId, *stateFile)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to init node server")
 		}

@@ -12,7 +12,8 @@ type state struct {
 }
 
 type volumeState struct {
-	DataDir string
+	MountPath   string
+	StagingPath string
 
 	StageHookURL   *url.URL
 	UnstageHookURL *url.URL

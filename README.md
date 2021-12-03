@@ -88,29 +88,31 @@ Sidecar with data within app's pod        Sidecar with data within driver's pod
     metadata:
     name: universal-csi-driver-sidecar1-volume
     spec:
-    volumeMode: Filesystem
-    accessModes:
+      volumeMode: Filesystem
+      accessModes:
         - ReadOnlyMany
-    capacity:
+      capacity:
         storage: 1Gi
-    csi:
+      csi:
         driver: csi.universal-csi-driver
         volumeHandle: niversal-csi-driver-sidecar1-volume
         readOnly: true
+        volumeAttributes:
+          mountPath: /data/sidecar1
     ---
     apiVersion: v1
     kind: PersistentVolumeClaim
     metadata:
     name: universal-csi-driver-sidecar1-volume-claim
     spec:
-    storageClassName: ''
-    accessModes:
+      storageClassName: ''
+      accessModes:
         - ReadOnlyMany
-    volumeMode: Filesystem
-    volumeName: universal-csi-driver-sidecar1-volume
-    resources:
+      volumeMode: Filesystem
+      volumeName: universal-csi-driver-sidecar1-volume
+      resources:
         requests:
-            storage: 1Gi
+          storage: 1Gi
     ```
 2. Deploy the driver as DaemonSet to needed nodes in cluster (recommended to use `nodeSelector` for the nodes which can serve application deployments).
 3. In App deployment which needs data from sidecar, configure volume
@@ -199,9 +201,7 @@ See [example manifest (static)](deployments/manifests/pv-static.yaml) for more d
   * `nodeStageSecretRef` - a reference to a secret containing `username` and `password` used to authenticate in *onlineconf-admin*
   * `readOnly`: `true` (this volumes are always read only)
   * `volumeAttributes`:
-    * `uri` - URI of *onlineconf-admin* instance
-    * `updateInterval` - polling interval for requests to *onlineconf-admin* instance (default: "10s")
-    * `${any_variable_name}` - any variables you want to interpolate into OnlineConf template values
+    * `mountPath` - path in driver's container to mount PV (**required**)
   * `volumeHandle` - required by Kubernetes
 * `mountOptions` - optional, supported options:
   * `mode=` - file mode bits of the volume root directory (default: `750`)

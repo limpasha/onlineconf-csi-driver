@@ -17,31 +17,28 @@ import (
 )
 
 type volumeInfo struct {
+	MountPath      string
 	StageHookURL   *url.URL
 	UnstageHookURL *url.URL
 }
 type nodeServer struct {
 	csi.UnimplementedNodeServer
-	id        string
-	m         sync.Mutex
-	state     *state
-	volumes   map[string]*volumeInfo
-	mountPath string
+	id      string
+	m       sync.Mutex
+	state   *state
+	volumes map[string]*volumeInfo
 }
 
-func newNodeServer(id string, stateFile, mountPath string) (*nodeServer, error) {
+func newNodeServer(id string, stateFile string) (*nodeServer, error) {
 	state, err := readState(stateFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open state file: %w", err)
 	}
 
-	// TODO check if mountPath reachable, mkdir if not
-
 	return &nodeServer{
-		id:        id,
-		state:     state,
-		volumes:   make(map[string]*volumeInfo),
-		mountPath: mountPath,
+		id:      id,
+		state:   state,
+		volumes: make(map[string]*volumeInfo),
 	}, nil
 }
 
@@ -87,7 +84,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 	defer ns.m.Unlock()
 
 	if us, ok := ns.state.Volumes[volumeId]; ok {
-		if us.DataDir == stage {
+		if us.StagingPath == stage {
 			return &csi.NodeStageVolumeResponse{}, nil
 		} else {
 			return nil, status.Error(codes.InvalidArgument, "volume is already staged to another StagingTargetPath")
@@ -111,7 +108,8 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 	}
 
 	state := volumeState{
-		DataDir: stage,
+		MountPath:   volCtx.mountPath,
+		StagingPath: stage,
 
 		StageHookURL:   volCtx.stageHookURL,
 		UnstageHookURL: volCtx.unstageHookURL,
@@ -144,7 +142,7 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	if vs, ok := ns.state.Volumes[volumeId]; !(ok && vs.DataDir == stage) {
+	if vs, ok := ns.state.Volumes[volumeId]; !(ok && vs.StagingPath == stage) {
 		return &csi.NodeUnstageVolumeResponse{}, nil
 	}
 
@@ -191,20 +189,18 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	ns.m.Lock()
 	defer ns.m.Unlock()
 
-	if vs, ok := ns.state.Volumes[volumeId]; !ok {
+	vs, ok := ns.state.Volumes[volumeId]
+	if !ok {
 		return nil, status.Error(codes.NotFound, "unknown VolumeId")
-	} else if vs.DataDir != stage {
+	} else if vs.StagingPath != stage {
 		return nil, status.Error(codes.InvalidArgument, "incompatible VolumeId and StagingTargetPath")
 	}
 
-	// always use the same configured
-	stage = ns.mountPath
-
-	if source, err := getMountSource(target); err != nil {
+	if source, err := getMountSource(vs.MountPath); err != nil {
 		log.Error().Err(err).Msg("failed to read mountinfo")
 		return nil, status.Error(codes.Internal, "failed to read mountinfo")
 	} else if source != "" {
-		if source == stage {
+		if source == vs.MountPath {
 			return &csi.NodePublishVolumeResponse{}, nil
 		} else {
 			return nil, status.Error(codes.InvalidArgument, "incompatible StagingTargetPath")
@@ -216,12 +212,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.Internal, "failed to mkdir TargetPath")
 	}
 
-	if err := syscall.Mount(stage, target, "", syscall.MS_MGC_VAL|syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
+	if err := syscall.Mount(vs.MountPath, target, "", syscall.MS_MGC_VAL|syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
 		log.Error().Err(err).Msg("failed to mount")
 		return nil, status.Error(codes.Internal, "failed to mount")
 	}
 
-	if err := syscall.Mount(stage, target, "", syscall.MS_MGC_VAL|syscall.MS_REMOUNT|syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
+	if err := syscall.Mount(vs.MountPath, target, "", syscall.MS_MGC_VAL|syscall.MS_REMOUNT|syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
 		log.Error().Err(err).Msg("failed to remount")
 		return nil, status.Error(codes.Internal, "failed to remount")
 	}
@@ -268,10 +264,11 @@ func (ns *nodeServer) runVolume(volumeId string, state volumeState, restore bool
 	}
 
 	vi := &volumeInfo{
+		MountPath:      state.MountPath,
 		StageHookURL:   state.StageHookURL,
 		UnstageHookURL: state.UnstageHookURL,
 	}
-	ns.volumes[state.DataDir] = vi
+	ns.volumes[state.StagingPath] = vi
 
 	return nil
 }
@@ -281,7 +278,7 @@ func (ns *nodeServer) start() {
 	defer ns.m.Unlock()
 
 	for volumeId, state := range ns.state.Volumes {
-		_, err := os.Stat(state.DataDir)
+		_, err := os.Stat(state.StagingPath)
 		if err != nil {
 			continue
 		}

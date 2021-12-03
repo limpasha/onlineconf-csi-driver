@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -57,14 +58,36 @@ func readVolumeCapability(capability *csi.VolumeCapability) (*volumeCapability, 
 type volumeContext struct {
 	vars map[string]string
 
+	mountPath      string
 	stageHookURL   *url.URL
 	unstageHookURL *url.URL
+}
+
+func validateMountPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty: required")
+	}
+
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("not absolute")
+	}
+
+	if ok, _ := filepath.Match(filepath.Join(*mountRootPath, "*"), path); !ok {
+		return fmt.Errorf("outside of root")
+	}
+
+	return nil
 }
 
 func readVolumeContext(raw map[string]string) (*volumeContext, error) {
 	ctx := &volumeContext{}
 
 	var err error
+
+	ctx.mountPath = raw["mountPath"]
+	if err = validateMountPath(ctx.mountPath); err != nil {
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("mountPath '%s' invalid: %v", ctx.mountPath, err))
+	}
 
 	if ctx.stageHookURL, err = url.Parse(raw["stageHookURL"]); err != nil || !ctx.stageHookURL.IsAbs() {
 		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("stageHookURL invalid value: %v", err))

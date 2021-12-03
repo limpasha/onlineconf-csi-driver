@@ -27,8 +27,8 @@ func (d *driver) initControllerServer() {
 	csi.RegisterControllerServer(d.server, newControllerServer())
 }
 
-func (d *driver) initNodeServer(id, stateFile, mountPath string) (err error) {
-	d.ns, err = newNodeServer(id, stateFile, mountPath)
+func (d *driver) initNodeServer(id, stateFile string) (err error) {
+	d.ns, err = newNodeServer(id, stateFile)
 	if err == nil {
 		csi.RegisterNodeServer(d.server, d.ns)
 	}
